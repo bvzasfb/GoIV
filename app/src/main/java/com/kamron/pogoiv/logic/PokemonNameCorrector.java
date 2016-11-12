@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 import lombok.AllArgsConstructor;
 
@@ -55,19 +54,26 @@ public class PokemonNameCorrector {
      * @return a Pokedist with the best guess of the pokemon
      */
     public PokeDist getPossiblePokemon(String poketext, String candytext, Optional<Integer> candyUpgradeCost) {
-        ArrayList<Pokemon> bestGuessEvolutionLine = getBestGuessForEvolutionLine(candytext);
+        ArrayList<Pokemon> bestGuessEvolutionLine = null;
         PokeDist guess;
 
         //1. Check if nickname perfectly matches a pokemon (which means pokemon is probably not renamed)
         guess = new PokeDist(pokeInfoCalculator.get(poketext), 0);
 
         //2. See if we can get a perfect match with candy name & upgrade cost
-        ArrayList<Pokemon> candyAndUpgradeGuess = null;
         if (guess.pokemon == null) {
-            candyAndUpgradeGuess = getCandyNameEvolutionCostGuess(bestGuessEvolutionLine,
-                    candyUpgradeCost);
-            if (candyAndUpgradeGuess != null && candyAndUpgradeGuess.size() == 1 ) {
-                guess = new PokeDist(candyAndUpgradeGuess.get(0), 0);
+            bestGuessEvolutionLine = getBestGuessForEvolutionLine(candytext);
+
+            ArrayList<Pokemon> candyNameEvolutionCostGuess =
+                    getCandyNameEvolutionCostGuess(bestGuessEvolutionLine, candyUpgradeCost);
+            if (candyNameEvolutionCostGuess != null) {
+                if (candyNameEvolutionCostGuess.size() == 1) {
+                    //we have only one guess this is the one
+                    guess = new PokeDist(candyNameEvolutionCostGuess.get(0), 0);
+                } else if (candyNameEvolutionCostGuess.size() > 1) {
+                    //if we have multiple guesses let the PokeDist guess based on name
+                    bestGuessEvolutionLine = candyNameEvolutionCostGuess;
+                }
             }
         }
 
@@ -81,19 +87,20 @@ public class PokemonNameCorrector {
 
         //4.  check correction for Eevee’s Evolution
         if (guess.pokemon == null) {
-            HashMap<String, String> EeveelutionCorrection = new HashMap<String,String>();
-            EeveelutionCorrection.put("Rainer", pokeInfoCalculator.get(133).name); //Vaporeon
-            EeveelutionCorrection.put("Sparky", pokeInfoCalculator.get(134).name); //Jolteon
-            EeveelutionCorrection.put("Pyro",   pokeInfoCalculator.get(135).name); //Flareon
-            if (EeveelutionCorrection.containsKey(poketext)) {
-                poketext = EeveelutionCorrection.get(poketext);
+            HashMap<String, String> eeveelutionCorrection = new HashMap<>();
+            eeveelutionCorrection.put("Rainer", pokeInfoCalculator.get(133).name); //Vaporeon
+            eeveelutionCorrection.put("Sparky", pokeInfoCalculator.get(134).name); //Jolteon
+            eeveelutionCorrection.put("Pyro", pokeInfoCalculator.get(135).name); //Flareon
+            if (eeveelutionCorrection.containsKey(poketext)) {
+                poketext = eeveelutionCorrection.get(poketext);
                 guess = new PokeDist(pokeInfoCalculator.get(poketext), 20);
             }
         }
 
-        //5.  get the pokemon with the closest name within the evolution line guessed from the candy.
-        if (guess.pokemon == null && candyAndUpgradeGuess != null) {
-            guess =  getNicknameGuess(poketext, candyAndUpgradeGuess);
+        //5.  get the pokemon with the closest name within the evolution line guessed from the candy (or candy and
+        // cost calculation).
+        if (guess.pokemon == null && bestGuessEvolutionLine != null) {
+            guess = getNicknameGuess(poketext, bestGuessEvolutionLine);
         }
 
         //6. All else failed: make a wild guess based only on closest name match
@@ -114,11 +121,11 @@ public class PokemonNameCorrector {
      * @return a pokemon that perfectly matches the input, or null if no match was found
      */
     private ArrayList<Pokemon> getCandyNameEvolutionCostGuess(ArrayList<Pokemon> bestGuessEvolutionLine,
-                                                   Optional<Integer> evolutionCost) {
+                                                              Optional<Integer> evolutionCost) {
         if (evolutionCost.isPresent()) {
             ArrayList<Pokemon> PokemonValidOptions = new ArrayList<Pokemon>();
             for (Pokemon pokemon : bestGuessEvolutionLine) {
-                if (Objects.equals(evolutionCost.orNull(), pokemon.candyEvolutionCost)) {
+                if (evolutionCost.get().equals(pokemon.candyEvolutionCost)) {
                     PokemonValidOptions.add(pokemon);
                 }
             }

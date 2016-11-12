@@ -4,6 +4,7 @@ import android.animation.Animator;
 import android.animation.ObjectAnimator;
 import android.app.Activity;
 import android.app.Notification;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.BroadcastReceiver;
@@ -426,18 +427,24 @@ public class Pokefly extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) {
-            return START_STICKY;
+            //We should not reach here with no intent, this wil error later due to view being null so we throw error now
+            //https://github.com/farkam135/GoIV/issues/477
+            throw new java.lang.IllegalArgumentException("No intent found.");
         }
 
         running = true;
 
         if (ACTION_STOP.equals(intent.getAction())) {
+            if (android.os.Build.VERSION.SDK_INT >= 24) {
+                stopForeground(STOP_FOREGROUND_DETACH);
+            }
             stopSelf();
+            makeNotification(true);
         } else if (intent.hasExtra(KEY_TRAINER_LEVEL)) {
             trainerLevel = intent.getIntExtra(KEY_TRAINER_LEVEL, 1);
             statusBarHeight = intent.getIntExtra(KEY_STATUS_BAR_HEIGHT, 0);
             batterySaver = intent.getBooleanExtra(KEY_BATTERY_SAVER, false);
-            makeNotification();
+            makeNotification(false);
             createInfoLayout();
             createIVButton();
             createArcPointer();
@@ -450,8 +457,9 @@ public class Pokefly extends Service {
                 screenShotHelper = ScreenShotHelper.start(Pokefly.this);
             }
         }
-
-        return START_STICKY;
+        //We have intent data, it's possible this service will be killed and we would want to recreate it
+        //https://github.com/farkam135/GoIV/issues/477
+        return START_REDELIVER_INTENT;
     }
 
     private void watchScreen() {
@@ -581,41 +589,99 @@ public class Pokefly extends Service {
 
     /**
      * Creates the GoIV notification.
+     * @param isStopping should we make starting or stopping notification
      */
-    private void makeNotification() {
+    private void makeNotification(boolean isStopping) {
         Intent openAppIntent = new Intent(this, MainActivity.class);
 
         PendingIntent openAppPendingIntent = PendingIntent.getActivity(
                 this, 0, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-        NotificationCompat.Action openAppAction = new NotificationCompat.Action.Builder(
-                android.R.drawable.ic_menu_more,
-                getString(R.string.notification_open_app),
-                openAppPendingIntent).build();
+        if (!isStopping) {
 
-        Intent stopServiceIntent = new Intent(this, Pokefly.class);
-        stopServiceIntent.setAction(ACTION_STOP);
+            Intent incrementLevelIntent = new Intent(this, MainActivity.class);
 
-        PendingIntent stopServicePendingIntent = PendingIntent.getService(
-                this, 0, stopServiceIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+            incrementLevelIntent.setAction(MainActivity.ACTION_INCREMENT_LEVEL);
 
-        NotificationCompat.Action stopServiceAction = new NotificationCompat.Action.Builder(
-                android.R.drawable.ic_menu_close_clear_cancel,
-                getString(R.string.main_stop),
-                stopServicePendingIntent).build();
+            PendingIntent incrementLevelPendingIntent = PendingIntent.getActivity(
+                    this, 0, incrementLevelIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-        Notification notification = new NotificationCompat.Builder(this)
-                .setOngoing(true)
-                .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                .setColor(getColorC(R.color.colorPrimary))
-                .setSmallIcon(R.drawable.notification_icon)
-                .setContentTitle(getString(R.string.notification_title, trainerLevel))
-                .setContentIntent(openAppPendingIntent)
-                .addAction(openAppAction)
-                .addAction(stopServiceAction)
-                .build();
+            NotificationCompat.Action incrementLevelAction = new NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_menu_add,
+                    getString(R.string.notification_title_increment_level),
+                    incrementLevelPendingIntent).build();
 
-        startForeground(NOTIFICATION_REQ_CODE, notification);
+            Intent stopServiceIntent = new Intent(this, Pokefly.class);
+            stopServiceIntent.setAction(ACTION_STOP);
+
+            PendingIntent stopServicePendingIntent = PendingIntent.getService(
+                    this, 0, stopServiceIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+            NotificationCompat.Action stopServiceAction = new NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                    getString(R.string.main_stop),
+                    stopServicePendingIntent).build();
+
+            Notification notification = new NotificationCompat.Builder(this)
+                    .setOngoing(true)
+                    .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                    .setColor(getColorC(R.color.colorPrimary))
+                    .setSmallIcon(R.drawable.notification_icon)
+                    .setContentTitle(getString(R.string.notification_title, trainerLevel))
+                    .setContentText(getString(R.string.notification_title_tap_to_open))
+                    .setContentIntent(openAppPendingIntent)
+                    .setVisibility(Notification.VISIBILITY_PUBLIC)
+                    .setPriority(Notification.PRIORITY_HIGH)
+                    .addAction(incrementLevelAction)
+                    .addAction(stopServiceAction)
+                    .build();
+
+            startForeground(NOTIFICATION_REQ_CODE, notification);
+            
+        } else {
+
+            Intent startSettingAppIntent = new Intent(this, MainActivity.class);
+            startSettingAppIntent.setAction(MainActivity.ACTION_OPEN_SETTINGS);
+
+            PendingIntent startSettingsPendingIntent = PendingIntent.getActivity(
+                    this, 0, startSettingAppIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+            NotificationCompat.Action startSettingsAction = new NotificationCompat.Action.Builder(
+                    R.drawable.ic_settings_white_24dp,
+                    getString(R.string.settings_page_title),
+                    startSettingsPendingIntent).build();
+
+
+            Intent startAppIntent = new Intent(this, MainActivity.class);
+
+            startAppIntent.setAction(MainActivity.ACTION_START_POKEFLY);
+
+            PendingIntent startServicePendingIntent = PendingIntent.getActivity(
+                    this, 0, startAppIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+            NotificationCompat.Action startServiceAction = new NotificationCompat.Action.Builder(
+                    R.drawable.notification_icon,
+                    getString(R.string.main_start),
+                    startServicePendingIntent).build();
+
+            Notification notification = new NotificationCompat.Builder(getApplicationContext())
+                    .setOngoing(false)
+                    .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                    .setColor(getColorC(R.color.colorPrimary))
+                    .setSmallIcon(R.drawable.notification_icon)
+                    .setContentTitle(getString(R.string.notification_title_goiv_stopped))
+                    .setContentText(getString(R.string.notification_title_tap_to_open))
+                    .setContentIntent(openAppPendingIntent)
+                    .addAction(startSettingsAction)
+                    .addAction(startServiceAction)
+                    .setVisibility(Notification.VISIBILITY_PUBLIC)
+                    .setPriority(Notification.PRIORITY_HIGH)
+                    .build();
+
+            NotificationManager mNotifyMgr =
+                    (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            mNotifyMgr.notify(NOTIFICATION_REQ_CODE,notification);
+        }
     }
 
     /**
@@ -1203,7 +1269,8 @@ public class Pokefly extends Service {
 
     /**
      * Saves the pokemon nickname relation to picked pokemon, and saves it to sharedPref settings.
-     * @param ocredPokemonName The scanned nickname
+     *
+     * @param ocredPokemonName     The scanned nickname
      * @param correctedPokemonName The pokemon to connect with the nickname
      */
     private void putCorrection(String ocredPokemonName, String correctedPokemonName) {
@@ -1776,7 +1843,11 @@ public class Pokefly extends Service {
     }
 
     private void initOcr() {
-        String extdir = getExternalFilesDir(null).toString();
+        File externalFilesDir = getExternalFilesDir(null);
+        if (externalFilesDir == null) {
+            externalFilesDir = getFilesDir();
+        }
+        String extdir = externalFilesDir.toString();
         if (!new File(extdir + "/tessdata/eng.traineddata").exists()) {
             CopyUtils.copyAssetFolder(getAssets(), "tessdata", extdir + "/tessdata");
         }
