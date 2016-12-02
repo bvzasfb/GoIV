@@ -67,6 +67,7 @@ import com.kamron.pogoiv.logic.PokeSpam;
 import com.kamron.pogoiv.logic.Pokemon;
 import com.kamron.pogoiv.logic.PokemonNameCorrector;
 import com.kamron.pogoiv.logic.PokemonShareHandler;
+import com.kamron.pogoiv.logic.PokemonStatsExporter;
 import com.kamron.pogoiv.logic.ScanContainer;
 import com.kamron.pogoiv.logic.ScanResult;
 import com.kamron.pogoiv.logic.UpgradeCost;
@@ -164,6 +165,9 @@ public class Pokefly extends Service {
 
     @BindView(R.id.shareWithStorimod)
     ImageButton shareWithStorimod;
+
+    @BindView(R.id.exportStats)
+    ImageButton exportStats;
 
     private PokemonSpinnerAdapter pokeInputSpinnerAdapter;
     @BindView(R.id.spnPokemonName)
@@ -290,6 +294,7 @@ public class Pokefly extends Service {
     ImageView positionHandler;
 
     private String pokemonName;
+    private String realPokemonName;
     private String candyName;
     private Optional<Integer> pokemonCandy = Optional.absent();
     private Optional<Integer> pokemonCP = Optional.absent();
@@ -1030,7 +1035,15 @@ public class Pokefly extends Service {
         cancelInfoDialog();
     }
 
-
+    @OnClick({R.id.exportStats})
+    /**
+     * Save the result of the pokemon stat to file and closes the overlay.
+     */
+    public void exportScannedPokemonStats() {
+        PokemonStatsExporter statsExporter = new PokemonStatsExporter();
+        statsExporter.prepareData(this, ScanContainer.scanContainer.currScan, pokemonUniqueID,optionalIntToString(pokemonCandy),pokemonName,realPokemonName);
+        cancelInfoDialog();
+    }
 
     private void resetToSpinner() {
         autoCompleteTextView1.setVisibility(View.GONE);
@@ -1188,7 +1201,7 @@ public class Pokefly extends Service {
         if (pokemon == null) {
             return;
         }
-
+        realPokemonName = pokemon.name;
         rememberUserInputForPokemonNameIfNewNickname(pokemon);
 
         IVScanResult ivScanResult = pokeInfoCalculator.getIVPossibilities(pokemon, estimatedPokemonLevel,
